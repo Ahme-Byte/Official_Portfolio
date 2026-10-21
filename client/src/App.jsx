@@ -1,608 +1,434 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import {
-  motion,
-  AnimatePresence,
-  useMotionValue,
-  useSpring,
-} from "framer-motion";
+import { useEffect, useState, useCallback, lazy, Suspense } from "react";
+import { createPortal } from "react-dom";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { Moon, Sun } from "lucide-react";
 import SmoothScroll from "./components/SmoothScroll";
+import Footer from "./components/Footer";
+import { theme, fonts, ease } from "./theme";
+import { navLinks, profile } from "./config/data";
+import { getThemeMode, setThemeMode } from "./hooks/useThemeMode";
 
-// ─── Section placeholders ─────────────────────────────────────
-// Replace each with the real component once built.
-import Hero from "./components/Hero";
-import Arsenal from "./components/Arsenal";
-import ClassifiedProjects from "./components/ClassifiedProjects";
-import TerminalContact from "./components/TerminalContact";
+const Arsenal = lazy(() => import("./components/Arsenal"));
+const Hero = lazy(() => import("./components/Hero"));
+const About = lazy(() => import("./components/About"));
+const ClassifiedProjects = lazy(
+  () => import("./components/ClassifiedProjects"),
+);
+const Experience = lazy(() => import("./components/Experience"));
+const Education = lazy(() => import("./components/Education"));
+const TerminalContact = lazy(() => import("./components/TerminalContact"));
 
-// ─────────────────────────────────────────────────────────────
-// 1.  MATRIX RAIN  — offscreen canvas, composited via CSS
-//     Runs in its own isolated RAF so Lenis never fights it.
-// ─────────────────────────────────────────────────────────────
-function MatrixRain() {
-  const canvasRef = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
-    const FONT_SIZE = 14;
-    const CHARS =
-      "ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ" +
-      "0123456789ABCDEF<>{}[]|/\\\\";
-
-    let width, height, columns, drops;
-
-    function resize() {
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
-      columns = Math.floor(width / FONT_SIZE);
-      drops = Array.from({ length: columns }, () =>
-        Math.floor((Math.random() * -height) / FONT_SIZE),
-      );
-    }
-
-    resize();
-
-    let raf;
-    let frame = 0;
-
-    function draw() {
-      frame++;
-      // Only redraw every 3 frames → ~20 fps for the rain (huge perf win)
-      if (frame % 3 !== 0) {
-        raf = requestAnimationFrame(draw);
-        return;
-      }
-
-      // Fade trail
-      ctx.fillStyle = "rgba(5, 5, 5, 0.05)";
-      ctx.fillRect(0, 0, width, height);
-
-      ctx.font = `${FONT_SIZE}px "Courier New", monospace`;
-
-      for (let i = 0; i < drops.length; i++) {
-        const y = drops[i] * FONT_SIZE;
-        if (y < 0) {
-          drops[i]++;
-          continue;
-        }
-
-        // Bright head glyph
-        ctx.fillStyle = "#00ff66";
-        ctx.globalAlpha = 0.9;
-        ctx.fillText(
-          CHARS[Math.floor(Math.random() * CHARS.length)],
-          i * FONT_SIZE,
-          y,
-        );
-
-        // Dimmer mid-trail
-        ctx.fillStyle = "#00cc55";
-        ctx.globalAlpha = 0.25;
-        ctx.fillText(
-          CHARS[Math.floor(Math.random() * CHARS.length)],
-          i * FONT_SIZE,
-          y - FONT_SIZE,
-        );
-
-        // Reset column
-        if (y > height && Math.random() > 0.975) {
-          drops[i] = Math.floor(Math.random() * -20);
-        }
-        drops[i]++;
-      }
-
-      ctx.globalAlpha = 1;
-      raf = requestAnimationFrame(draw);
-    }
-
-    raf = requestAnimationFrame(draw);
-
-    const ro = new ResizeObserver(resize);
-    ro.observe(document.documentElement);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-    };
-  }, []);
-
+function SectionFallback() {
   return (
-    <canvas
-      ref={canvasRef}
+    <div
+      style={{
+        minHeight: "40vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: theme.textDim,
+        fontFamily: fonts.mono,
+        fontSize: "0.75rem",
+      }}
+    >
+      Loading section…
+    </div>
+  );
+}
+
+function AmbientBackdrop() {
+  return (
+    <div
+      className="ambient-backdrop"
       aria-hidden="true"
       style={{
         position: "fixed",
         inset: 0,
         zIndex: 0,
         pointerEvents: "none",
-        opacity: 0.07, // ultra-subtle ambient; foreground content pops
-        mixBlendMode: "screen",
+        background: `
+          radial-gradient(ellipse 80% 50% at 20% -10%, rgba(56,189,248,0.09), transparent 50%),
+          radial-gradient(ellipse 60% 40% at 90% 10%, rgba(99,102,241,0.08), transparent 45%),
+          radial-gradient(ellipse 50% 50% at 50% 100%, rgba(52,211,153,0.05), transparent 50%),
+          ${theme.bg}
+        `,
       }}
     />
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// 2.  GLITCH OVERLAY  — CSS scanlines + chromatic aberration
-//     Pure CSS, zero JS cost.
-// ─────────────────────────────────────────────────────────────
-function GlitchOverlay() {
-  return (
-    <>
-      {/* Scanlines */}
-      <div
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 1,
-          pointerEvents: "none",
-          backgroundImage:
-            "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,102,0.015) 2px, rgba(0,255,102,0.015) 4px)",
-          backgroundSize: "100% 4px",
-        }}
-      />
-
-      {/* Vignette */}
-      <div
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 1,
-          pointerEvents: "none",
-          background:
-            "radial-gradient(ellipse at center, transparent 40%, rgba(5,5,5,0.85) 100%)",
-        }}
-      />
-
-      {/* Chromatic aberration pulse — keyframe injected inline */}
-      <style>{`
-        @keyframes chromatic-pulse {
-          0%, 94%, 100% { opacity: 0; }
-          95%            { opacity: 1; transform: translateX(-2px); }
-          96%            { opacity: 0.6; transform: translateX(2px); }
-          97%            { opacity: 0; }
-        }
-        @keyframes scanbar {
-          0%   { top: -10%; }
-          100% { top: 110%; }
-        }
-        @keyframes glitch-h {
-          0%, 90%, 100%  { clip-path: inset(0 0 100% 0); opacity: 0; }
-          91%            { clip-path: inset(30% 0 50% 0); opacity: 0.4; transform: translateX(4px); }
-          92%            { clip-path: inset(70% 0 10% 0); opacity: 0.2; transform: translateX(-3px); }
-          93%            { clip-path: inset(0 0 100% 0); opacity: 0; }
-        }
-        @keyframes cursor-blink {
-          0%, 49% { opacity: 1; }
-          50%, 100% { opacity: 0; }
-        }
-        @keyframes neon-flicker {
-          0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; }
-          20%, 24%, 55%                           { opacity: 0.4; }
-        }
-        @keyframes float-up {
-          0%   { transform: translateY(0px); }
-          50%  { transform: translateY(-8px); }
-          100% { transform: translateY(0px); }
-        }
-        @keyframes rotate-slow {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
-        :root {
-          --void:      #050505;
-          --neon:      #00ff66;
-          --neon-dim:  #00cc55;
-          --cyber:     #9d00ff;
-          --cyber-dim: #6600bb;
-          --ghost:     #0d0d0d;
-          --wire:      #1a1a1a;
-          --text-dim:  #3a3a3a;
-          --text-mid:  #555;
-          color-scheme: dark;
-        }
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html { scroll-behavior: auto; } /* Lenis handles this */
-        body {
-          background-color: var(--void);
-          color: var(--neon);
-          font-family: 'Courier New', 'Lucida Console', monospace;
-          overflow-x: hidden;
-          -webkit-font-smoothing: antialiased;
-        }
-        ::selection { background: var(--cyber); color: #fff; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: var(--void); }
-        ::-webkit-scrollbar-thumb { background: var(--neon-dim); border-radius: 2px; }
-
-        /* Neon text glow utility */
-        .neon-text { text-shadow: 0 0 8px var(--neon), 0 0 20px var(--neon), 0 0 40px var(--neon-dim); }
-        .cyber-text { text-shadow: 0 0 8px var(--cyber), 0 0 20px var(--cyber); }
-        .neon-border { box-shadow: 0 0 0 1px var(--neon), 0 0 12px rgba(0,255,102,0.15), inset 0 0 12px rgba(0,255,102,0.04); }
-        .cyber-border { box-shadow: 0 0 0 1px var(--cyber), 0 0 12px rgba(157,0,255,0.2), inset 0 0 12px rgba(157,0,255,0.04); }
-
-        /* Section separator line */
-        .section-divider {
-          display: block;
-          width: 100%;
-          height: 1px;
-          background: linear-gradient(90deg, transparent, var(--neon-dim), var(--cyber-dim), transparent);
-          opacity: 0.3;
-        }
-
-        /* Terminal cursor */
-        .term-cursor::after {
-          content: '█';
-          animation: cursor-blink 1s step-end infinite;
-          color: var(--neon);
-        }
-      `}</style>
-
-      {/* Rare horizontal glitch bar */}
-      <div
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 2,
-          pointerEvents: "none",
-          background: `linear-gradient(transparent 30%, rgba(0,255,102,0.06) 50%, transparent 70%)`,
-          animation: "chromatic-pulse 8s infinite",
-        }}
-      />
-    </>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-// 3.  CURSOR GLOW  — neon orb that follows the mouse
-// ─────────────────────────────────────────────────────────────
-function CursorGlow() {
-  const mx = useMotionValue(-200);
-  const my = useMotionValue(-200);
-  const sx = useSpring(mx, { stiffness: 120, damping: 20, mass: 0.5 });
-  const sy = useSpring(my, { stiffness: 120, damping: 20, mass: 0.5 });
+function ThemeToggle() {
+  const [mode, setMode] = useState(() => getThemeMode());
+  const reducedMotion = useReducedMotion();
+  const nextMode = mode === "dark" ? "light" : "dark";
 
   useEffect(() => {
-    const move = (e) => {
-      mx.set(e.clientX);
-      my.set(e.clientY);
-    };
-    window.addEventListener("pointermove", move, { passive: true });
-    return () => window.removeEventListener("pointermove", move);
-  }, [mx, my]);
+    const handleTheme = (event) => setMode(event.detail);
+    window.addEventListener("portfolio-theme-change", handleTheme);
+    return () => window.removeEventListener("portfolio-theme-change", handleTheme);
+  }, []);
 
   return (
-    <motion.div
-      aria-hidden="true"
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        x: sx,
-        y: sy,
-        translateX: "-50%",
-        translateY: "-50%",
-        width: 320,
-        height: 320,
-        borderRadius: "50%",
-        background:
-          "radial-gradient(circle, rgba(0,255,102,0.06) 0%, rgba(157,0,255,0.04) 40%, transparent 70%)",
-        zIndex: 1,
-        pointerEvents: "none",
-        mixBlendMode: "screen",
-        filter: "blur(2px)",
-      }}
-    />
+    <button
+      className="theme-toggle"
+      type="button"
+      aria-label={`Switch to ${nextMode} theme`}
+      aria-pressed={mode === "light"}
+      onClick={() => setThemeMode(nextMode)}
+    >
+      <motion.span
+        className="theme-toggle-pill"
+        animate={{ x: mode === "dark" ? 0 : 29 }}
+        transition={reducedMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 30 }}
+        aria-hidden="true"
+      />
+      <span className={`theme-toggle-icon${mode === "dark" ? " is-active" : ""}`} aria-hidden="true">
+        <Moon size={15} />
+      </span>
+      <span className={`theme-toggle-icon${mode === "light" ? " is-active" : ""}`} aria-hidden="true">
+        <Sun size={15} />
+      </span>
+    </button>
   );
 }
-
-// ─────────────────────────────────────────────────────────────
-// 4.  NAV  — sticky terminal-style navigation bar
-// ─────────────────────────────────────────────────────────────
-const NAV_LINKS = [
-  { id: "hero", label: "./home", key: "F1" },
-  { id: "arsenal", label: "./skills", key: "F2" },
-  { id: "projects", label: "./projects", key: "F3" },
-  { id: "contact", label: "./contact", key: "F4" },
-];
 
 function Nav() {
   const [active, setActive] = useState("hero");
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
-  // Track scroll position for nav background
   useEffect(() => {
-    const handler = () => setScrolled(window.scrollY > 60);
+    const handler = () => setScrolled(window.scrollY > 40);
     window.addEventListener("scroll", handler, { passive: true });
     return () => window.removeEventListener("scroll", handler);
   }, []);
 
-  // Intersection observer to highlight active section
   useEffect(() => {
-    const sections = NAV_LINKS.map(({ id }) =>
-      document.getElementById(id),
-    ).filter(Boolean);
+    const sections = navLinks
+      .map(({ id }) => document.getElementById(id))
+      .filter(Boolean);
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) setActive(entry.target.id);
         });
       },
-      { threshold: 0.4 },
+      { threshold: 0.3 },
     );
     sections.forEach((s) => observer.observe(s));
     return () => observer.disconnect();
   }, []);
 
+  // Lock body scroll while mobile menu is open
+  useEffect(() => {
+    if (!menuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.__lenis?.stop?.();
+    return () => {
+      document.body.style.overflow = prev;
+      window.__lenis?.start?.();
+    };
+  }, [menuOpen]);
+
   const scrollTo = useCallback((id) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (window.__lenis) {
-      window.__lenis.scrollTo(el, { offset: -80, duration: 1.4 });
-    } else {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
     setMenuOpen(false);
+    // Defer scroll until menu close paint
+    requestAnimationFrame(() => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (window.__lenis) {
+        window.__lenis.scrollTo(el, { duration: 1.15 });
+      } else {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
   }, []);
 
-  return (
-    <motion.nav
-      initial={{ y: -80, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 50,
-        padding: "0 clamp(1rem, 4vw, 3rem)",
-        height: 64,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        background: scrolled ? "rgba(5,5,5,0.92)" : "transparent",
-        backdropFilter: scrolled ? "blur(12px)" : "none",
-        borderBottom: scrolled
-          ? "1px solid rgba(0,255,102,0.12)"
-          : "1px solid transparent",
-        transition:
-          "background 0.4s ease, border-color 0.4s ease, backdrop-filter 0.4s ease",
-      }}
-    >
-      {/* Logo / handle */}
-      <motion.button
-        onClick={() => scrollTo("hero")}
-        whileHover={{ scale: 1.03 }}
-        whileTap={{ scale: 0.97 }}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          display: "flex",
-          flexDirection: "column",
-          lineHeight: 1.1,
-        }}
-      >
-        <span
-          style={{
-            fontSize: "0.65rem",
-            color: "#3a3a3a",
-            letterSpacing: "0.2em",
-            textTransform: "uppercase",
-          }}
-        >
-          root@portfolio:~#
-        </span>
-        <span
-          className="neon-text"
-          style={{
-            fontSize: "1.05rem",
-            fontWeight: 700,
-            letterSpacing: "0.08em",
-            color: "var(--neon)",
-          }}
-        >
-          FULL_STACK.exe
-        </span>
-      </motion.button>
+  const toggleMenu = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenuOpen((open) => !open);
+  }, []);
 
-      {/* Desktop links */}
-      <ul
-        role="list"
-        style={{
-          display: "flex",
-          gap: "2rem",
-          listStyle: "none",
-          alignItems: "center",
-        }}
-        className="nav-desktop"
-      >
-        {NAV_LINKS.map(({ id, label, key }) => {
-          const isActive = active === id;
-          return (
-            <li key={id}>
-              <motion.button
-                onClick={() => scrollTo(id)}
-                whileHover={{ y: -2 }}
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 2,
-                  color: isActive ? "var(--neon)" : "var(--text-mid)",
-                  transition: "color 0.25s ease",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "0.6rem",
-                    color: isActive ? "var(--cyber)" : "#2a2a2a",
-                    letterSpacing: "0.1em",
-                    transition: "color 0.25s ease",
-                  }}
-                >
-                  [{key}]
-                </span>
-                <span
-                  style={{
-                    fontSize: "0.78rem",
-                    fontWeight: isActive ? 700 : 400,
-                    letterSpacing: "0.06em",
-                    textShadow: isActive
-                      ? "0 0 8px var(--neon), 0 0 16px var(--neon-dim)"
-                      : "none",
-                    transition: "text-shadow 0.25s ease",
-                  }}
-                >
-                  {label}
-                </span>
-                {/* Active underline */}
-                <motion.span
-                  animate={{
-                    scaleX: isActive ? 1 : 0,
-                    opacity: isActive ? 1 : 0,
-                  }}
-                  transition={{ duration: 0.3 }}
-                  style={{
-                    display: "block",
-                    height: 1,
-                    width: "100%",
-                    background: "var(--neon)",
-                    boxShadow: "0 0 6px var(--neon)",
-                    transformOrigin: "left",
-                  }}
-                />
-              </motion.button>
-            </li>
-          );
-        })}
-      </ul>
-
-      {/* Status badge */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "0.5rem",
-          fontSize: "0.65rem",
-          color: "var(--text-dim)",
-          letterSpacing: "0.08em",
-          userSelect: "none",
-        }}
-        className="nav-status"
-      >
-        <span
-          style={{
-            display: "inline-block",
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: "var(--neon)",
-            boxShadow: "0 0 6px var(--neon)",
-            animation: "neon-flicker 4s infinite",
-          }}
-        />
-        ONLINE · ENCRYPTED
-      </div>
-
-      {/* Mobile hamburger (hidden on desktop via CSS below) */}
-      <button
-        onClick={() => setMenuOpen((v) => !v)}
-        aria-label="Toggle menu"
-        className="nav-hamburger"
-        style={{
-          display: "none",
-          background: "none",
-          border: "1px solid rgba(0,255,102,0.25)",
-          borderRadius: 4,
-          color: "var(--neon)",
-          padding: "6px 10px",
-          cursor: "pointer",
-          fontSize: "0.75rem",
-          letterSpacing: "0.05em",
-        }}
-      >
-        {menuOpen ? "[ CLOSE ]" : "[ MENU ]"}
-      </button>
-
-      {/* Mobile dropdown */}
+  const mobileMenu =
+    typeof document !== "undefined" &&
+    createPortal(
       <AnimatePresence>
         {menuOpen && (
-          <motion.div
-            key="mobile-menu"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
+          <>
+            <motion.button
+              key="mobile-nav-backdrop"
+              type="button"
+              aria-label="Close menu"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={() => setMenuOpen(false)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                top: 68,
+                zIndex: 100000,
+                border: "none",
+                margin: 0,
+                padding: 0,
+                background: "rgba(5, 8, 14, 0.55)",
+                backdropFilter: "blur(6px)",
+                WebkitBackdropFilter: "blur(6px)",
+                pointerEvents: "auto",
+                cursor: "pointer",
+              }}
+            />
+            <motion.div
+              key="mobile-nav-panel"
+              className="mobile-nav-panel"
+              id="mobile-nav-menu"
+              role="navigation"
+              aria-label="Mobile"
+              data-lenis-prevent
+              initial={{ opacity: 0, y: -12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              style={{
+                position: "fixed",
+                top: 68,
+                left: 0,
+                right: 0,
+                zIndex: 100001,
+                padding: "1.1rem clamp(1.25rem, 4vw, 3rem) 1.4rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.4rem",
+                maxWidth: "100vw",
+                maxHeight: "calc(100dvh - 68px)",
+                overflowY: "auto",
+                WebkitOverflowScrolling: "touch",
+                pointerEvents: "auto",
+                background: "#121826",
+                borderBottom: `1px solid ${theme.border}`,
+                boxShadow: "0 28px 56px rgba(0,0,0,0.55)",
+              }}
+            >
+              {navLinks.map(({ id, hash, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => scrollTo(id)}
+                  style={{
+                    background:
+                      active === id ? theme.accentSoft : "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    color: active === id ? theme.accent : theme.textMuted,
+                    fontSize: "1rem",
+                    fontFamily: fonts.sans,
+                    fontWeight: 500,
+                    padding: "0.85rem 0.9rem",
+                    borderRadius: 10,
+                    pointerEvents: "auto",
+                    touchAction: "manipulation",
+                    WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  <span
+                    className="font-mono"
+                    style={{ fontSize: "0.75rem", marginRight: 10 }}
+                  >
+                    {hash}
+                  </span>
+                  {label}
+                </button>
+              ))}
+              <div className="mobile-theme-control">
+                <span>Appearance</span>
+                <ThemeToggle />
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>,
+      document.body,
+    );
+
+  return (
+    <>
+      <header
+        className="site-header"
+        data-lenis-prevent
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100002,
+          height: 68,
+          pointerEvents: "auto",
+          overflow: "visible",
+        }}
+      >
+        <motion.nav
+          initial={{ y: -64, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.7, ease }}
+          style={{
+            height: "100%",
+            padding: "0 clamp(1.25rem, 4vw, 3rem)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: scrolled || menuOpen ? "var(--header-solid)" : "var(--header-glass)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            borderBottom: `1px solid ${
+              scrolled || menuOpen ? theme.border : "transparent"
+            }`,
+            pointerEvents: "auto",
+            overflow: "visible",
+            maxWidth: "100vw",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => scrollTo("hero")}
             style={{
-              position: "absolute",
-              top: 64,
-              left: 0,
-              right: 0,
-              background: "rgba(5,5,5,0.97)",
-              borderBottom: "1px solid rgba(0,255,102,0.2)",
-              padding: "1.5rem clamp(1rem, 4vw, 3rem)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "1.25rem",
-              backdropFilter: "blur(16px)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              textAlign: "left",
+              fontFamily: fonts.sans,
+              pointerEvents: "auto",
+              touchAction: "manipulation",
+              position: "relative",
+              zIndex: 2,
             }}
           >
-            {NAV_LINKS.map(({ id, label, key }) => (
-              <button
-                key={id}
-                onClick={() => scrollTo(id)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  color: active === id ? "var(--neon)" : "#555",
-                  fontSize: "0.9rem",
-                  letterSpacing: "0.05em",
-                  fontFamily: "inherit",
-                  display: "flex",
-                  gap: "0.75rem",
-                  alignItems: "center",
-                }}
-              >
-                <span style={{ color: "var(--cyber)", fontSize: "0.7rem" }}>
-                  [{key}]
-                </span>
-                {label}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <div
+              style={{
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                letterSpacing: "-0.02em",
+                color: theme.text,
+              }}
+            >
+              {profile.name}
+            </div>
+            <div
+              className="font-mono"
+              style={{
+                fontSize: "0.62rem",
+                color: theme.textDim,
+                letterSpacing: "0.04em",
+                marginTop: 2,
+              }}
+            >
+              {profile.location}
+            </div>
+          </button>
 
-      {/* Responsive style block */}
+          <ul
+            className="nav-desktop"
+            role="list"
+            style={{
+              display: "flex",
+              gap: "0.15rem",
+              listStyle: "none",
+              margin: 0,
+              padding: 0,
+              alignItems: "center",
+            }}
+          >
+            {navLinks.map(({ id, hash, label }) => {
+              const isActive = active === id;
+              return (
+                <li key={id}>
+                  <button
+                    type="button"
+                    onClick={() => scrollTo(id)}
+                    title={label}
+                    className="font-mono"
+                    style={{
+                      background: isActive ? theme.accentSoft : "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      color: isActive ? theme.accent : theme.textMuted,
+                      fontSize: "0.72rem",
+                      fontWeight: isActive ? 600 : 450,
+                      padding: "0.45rem 0.7rem",
+                      borderRadius: 8,
+                      transition: "color 0.2s, background 0.2s",
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    {hash}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="desktop-theme-control">
+            <ThemeToggle />
+          </div>
+
+          <button
+            type="button"
+            className="nav-hamburger"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-nav-menu"
+            onClick={toggleMenu}
+            style={{
+              background: theme.bgElevated,
+              border: `1px solid ${theme.borderStrong}`,
+              borderRadius: 8,
+              color: theme.text,
+              padding: "0.55rem 0.95rem",
+              cursor: "pointer",
+              fontFamily: fonts.sans,
+              fontSize: "0.82rem",
+              fontWeight: 600,
+              pointerEvents: "auto",
+              position: "relative",
+              zIndex: 3,
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
+              minHeight: 40,
+              minWidth: 72,
+            }}
+          >
+            {menuOpen ? "Close" : "Menu"}
+          </button>
+        </motion.nav>
+      </header>
+
+      {mobileMenu}
+
       <style>{`
-        @media (max-width: 768px) {
-          .nav-desktop  { display: none !important; }
-          .nav-status   { display: none !important; }
-          .nav-hamburger{ display: block !important; }
+        .nav-hamburger {
+          display: none;
+          pointer-events: auto !important;
+        }
+        .nav-desktop {
+          display: flex;
+        }
+        @media (max-width: 900px) {
+          .nav-desktop { display: none !important; }
+          .nav-hamburger {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto !important;
+          }
         }
       `}</style>
-    </motion.nav>
+    </>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// 5.  SECTION WRAPPER  — consistent section sizing + id anchor
-//     Each section fills at least 100vh and carries the correct
-//     id so the nav intersection observer can track it.
-// ─────────────────────────────────────────────────────────────
 function Section({ id, children, minHeight = "100vh", style = {} }) {
   return (
     <section
@@ -612,6 +438,9 @@ function Section({ id, children, minHeight = "100vh", style = {} }) {
         zIndex: 10,
         minHeight,
         width: "100%",
+        maxWidth: "100%",
+        overflowX: "hidden",
+        scrollMarginTop: id === "hero" ? 0 : 68,
         ...style,
       }}
     >
@@ -620,97 +449,228 @@ function Section({ id, children, minHeight = "100vh", style = {} }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// 6.  FOOTER  — minimal terminal footer
-// ─────────────────────────────────────────────────────────────
-function Footer() {
-  const year = new Date().getFullYear();
+function PageUtilities() {
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+        setScrollProgress(scrollable > 0 ? window.scrollY / scrollable : 0);
+        setShowBackToTop(window.scrollY > 600);
+      });
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
   return (
-    <footer
-      style={{
-        position: "relative",
-        zIndex: 10,
-        borderTop: "1px solid rgba(0,255,102,0.08)",
-        padding: "2rem clamp(1rem, 4vw, 3rem)",
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "1rem",
-        justifyContent: "space-between",
-        alignItems: "center",
-        fontSize: "0.65rem",
-        color: "var(--text-dim)",
-        letterSpacing: "0.1em",
-        background: "rgba(5,5,5,0.6)",
-        backdropFilter: "blur(8px)",
-      }}
-    >
-      <span>© {year} · FULL_STACK.exe · ALL RIGHTS RESERVED</span>
-      <span style={{ color: "var(--text-mid)" }}>
-        BUILT WITH: <span style={{ color: "var(--neon)" }}>REACT 19</span> ·{" "}
-        <span style={{ color: "var(--cyber)" }}>TAILWIND V4</span> ·{" "}
-        <span style={{ color: "var(--neon)" }}>FRAMER MOTION</span>
-      </span>
-      <span style={{ color: "var(--text-mid)" }}>
-        STATUS:{" "}
-        <span className="neon-text" style={{ color: "var(--neon)" }}>
-          ● SYSTEMS OPERATIONAL
-        </span>
-      </span>
-    </footer>
+    <>
+      <div
+        className="scroll-progress"
+        role="progressbar"
+        aria-label="Page scroll progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(scrollProgress * 100)}
+      >
+        <span style={{ transform: `scaleX(${scrollProgress})` }} />
+      </div>
+      <AnimatePresence>
+        {showBackToTop && (
+          <motion.button
+            type="button"
+            className="back-to-top"
+            aria-label="Back to top"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            onClick={() => {
+              if (window.__lenis) window.__lenis.scrollTo(0, { duration: 0.8 });
+              else window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+          >
+            ↑
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// 7.  APP ROOT
-// ─────────────────────────────────────────────────────────────
-export default function App() {
+function PageIntro() {
+  const reducedMotion = useReducedMotion();
+  const [dismissed, setDismissed] = useState(false);
+  const visible = !reducedMotion && !dismissed;
+
+  useEffect(() => {
+    if (reducedMotion) return undefined;
+    const timer = window.setTimeout(() => setDismissed(true), 520);
+    return () => window.clearTimeout(timer);
+  }, [reducedMotion]);
+
   return (
-    <SmoothScroll>
-      {/* ── Ambient / decorative layers (pointer-events: none) ── */}
-      <MatrixRain />
-      <GlitchOverlay />
-      <CursorGlow />
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          className="page-intro"
+          aria-hidden="true"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.35 } }}
+        >
+          <motion.span
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: 1 }}
+            transition={{ duration: 0.42, ease }}
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
 
-      {/* ── Navigation ─────────────────────────────────────────── */}
+function NotFound() {
+  return (
+    <main className="not-found">
+      <p className="font-mono">ERROR 404 · ROUTE NOT FOUND</p>
+      <h1>This page isn’t in my orbit.</h1>
+      <p>The page may have moved, or the link may be out of date.</p>
+      <a href="/">Return to portfolio</a>
+    </main>
+  );
+}
+
+export default function App() {
+  const isHome = ["/", "/index.html"].includes(window.location.pathname);
+
+  useEffect(() => {
+    let canonical = document.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.rel = "canonical";
+      document.head.append(canonical);
+    }
+    canonical.href = `${window.location.origin}/`;
+    const schema = document.querySelector("#person-schema");
+    if (schema) {
+      schema.textContent = JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "Person",
+        name: "Muhammad Ahmad",
+        jobTitle: "Full-Stack Developer",
+        address: {
+          "@type": "PostalAddress",
+          addressLocality: "Lahore",
+          addressCountry: "PK",
+        },
+        sameAs: [profile.linkedin, "https://github.com/Ahme-Byte"],
+      });
+    }
+  }, []);
+
+  if (!isHome) return <NotFound />;
+
+  return (
+    <>
+      <PageIntro />
+      <PageUtilities />
       <Nav />
-
-      {/* ── Main content ────────────────────────────────────────── */}
-      <main
-        style={{
-          position: "relative",
-          zIndex: 10,
-          isolation: "isolate", // new stacking context keeps layers clean
-        }}
-      >
-        {/* ── Hero ─────────────────────────────────────────── */}
-        <Section id="hero">
-          <Hero />
-        </Section>
-
-        <span className="section-divider" role="separator" aria-hidden="true" />
-
-        {/* ── Arsenal ──────────────────────────────────────── */}
-        <Section id="arsenal">
-          <Arsenal />
-        </Section>
-
-        <span className="section-divider" role="separator" aria-hidden="true" />
-
-        {/* ── Classified Projects ───────────────────────────── */}
-        <Section id="projects">
-          <ClassifiedProjects />
-        </Section>
-
-        <span className="section-divider" role="separator" aria-hidden="true" />
-
-        {/* ── Terminal Contact ──────────────────────────────── */}
-        <Section id="contact" minHeight="80vh">
-          <TerminalContact />
-        </Section>
-      </main>
-
-      {/* ── Footer ─────────────────────────────────────────────── */}
-      <Footer />
-    </SmoothScroll>
+      <SmoothScroll>
+        <AmbientBackdrop />
+        <main
+          style={{
+            position: "relative",
+            zIndex: 10,
+            isolation: "isolate",
+            overflowX: "hidden",
+            maxWidth: "100vw",
+            paddingTop: 0,
+          }}
+        >
+          <Section id="hero" style={{ minHeight: "100svh", paddingTop: 68 }}>
+            <Suspense
+              fallback={
+                <div
+                  aria-hidden="true"
+                  style={{
+                    minHeight: "calc(100svh - 68px)",
+                    background:
+                      "radial-gradient(ellipse at 72% 45%, rgba(56,189,248,0.1), transparent 48%)",
+                  }}
+                />
+              }
+            >
+              <Hero />
+            </Suspense>
+          </Section>
+          <Section id="about-section">
+            <Suspense fallback={<SectionFallback />}>
+              <About />
+            </Suspense>
+          </Section>
+          <span
+            className="section-divider"
+            role="separator"
+            aria-hidden="true"
+          />
+          <Section id="skills">
+            <Suspense fallback={<SectionFallback />}>
+              <Arsenal />
+            </Suspense>
+          </Section>
+          <span
+            className="section-divider"
+            role="separator"
+            aria-hidden="true"
+          />
+          <Section id="projects">
+            <Suspense fallback={<SectionFallback />}>
+              <ClassifiedProjects />
+            </Suspense>
+          </Section>
+          <span
+            className="section-divider"
+            role="separator"
+            aria-hidden="true"
+          />
+          <Section id="experience">
+            <Suspense fallback={<SectionFallback />}>
+              <Experience />
+            </Suspense>
+          </Section>
+          <span
+            className="section-divider"
+            role="separator"
+            aria-hidden="true"
+          />
+          <Section id="education">
+            <Suspense fallback={<SectionFallback />}>
+              <Education />
+            </Suspense>
+          </Section>
+          <span
+            className="section-divider"
+            role="separator"
+            aria-hidden="true"
+          />
+          <Section id="contact" minHeight="80vh">
+            <Suspense fallback={<SectionFallback />}>
+              <TerminalContact />
+            </Suspense>
+          </Section>
+        </main>
+        <Footer />
+      </SmoothScroll>
+    </>
   );
 }

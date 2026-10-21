@@ -2,9 +2,60 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      try {
+        const savedTheme = localStorage.getItem("portfolio-theme");
+        document.documentElement.dataset.theme = savedTheme === "light" ? "light" : "dark";
+      } catch {
+        document.documentElement.dataset.theme = "dark";
+      }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>client</title>
+    <meta
+      name="description"
+      content="Senior full-stack engineer building scalable, secure web applications. React, Node, cloud architecture, and OWASP-hardened backends."
+    />
+    <meta name="author" content="Muhammad Ahmad" />
+    <meta name="theme-color" content="#0b0f17" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Muhammad Ahmad · Full-Stack Developer" />
+    <meta
+      property="og:description"
+      content="I build polished, secure, production-ready web products end-to-end."
+    />
+    <meta property="og:image" content="/favicon.svg" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Muhammad Ahmad · Full-Stack Developer" />
+    <meta
+      name="twitter:description"
+      content="I build polished, secure, production-ready web products end-to-end."
+    />
+    <meta name="twitter:image" content="/favicon.svg" />
+    <script id="person-schema" type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        "name": "Muhammad Ahmad",
+        "jobTitle": "Full-Stack Developer",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Lahore",
+          "addressCountry": "PK"
+        },
+        "sameAs": [
+          "https://www.linkedin.com/in/muhammad-ahmad-7b6717445/",
+          "https://github.com/Ahme-Byte"
+        ]
+      }
+    </script>
+    <title>Muhammad Ahmad · Full-Stack Developer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
     <div id="root"></div>
