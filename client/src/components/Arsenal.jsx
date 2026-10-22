@@ -33,28 +33,30 @@ const BRAND_COLORS = {
   audit: "#FBBF24",
 };
 const LIGHT_BRAND_COLORS = {
-  react: "#087EA4",
-  next: "#334155",
-  ts: "#1453A6",
-  tw: "#0369A1",
-  r3f: "#6D28D9",
-  node: "#3F7D20",
-  express: "#475569",
-  rest: "#B45309",
-  auth: "#6D28D9",
-  workers: "#C2410C",
-  pg: "#285A88",
-  mysql: "#A94F00",
-  mongo: "#26752A",
-  redis: "#B42318",
-  docker: "#1263A3",
-  cicd: "#A16207",
-  owasp: "#C2410C",
-  "api-sec": "#047857",
-  helmet: "#4338CA",
-  encrypt: "#0369A1",
-  audit: "#A16207",
+  react: "#0EA5E9",
+  next: "#6366F1",
+  ts: "#4F46E5",
+  tw: "#0284C7",
+  r3f: "#8B5CF6",
+  node: "#16A34A",
+  express: "#5B4BC4",
+  rest: "#D97706",
+  auth: "#8B5CF6",
+  workers: "#EA580C",
+  pg: "#2563EB",
+  mysql: "#D97706",
+  mongo: "#16A34A",
+  redis: "#E11D48",
+  docker: "#0284C7",
+  cicd: "#CA8A04",
+  owasp: "#EA580C",
+  "api-sec": "#059669",
+  helmet: "#4F46E5",
+  encrypt: "#0EA5E9",
+  audit: "#CA8A04",
 };
+const getSkillColor = (skill, themeMode) =>
+  themeMode === "light" ? LIGHT_BRAND_COLORS[skill.id] || skill.color : skill.color;
 
 const SKILLS = skillPillars.flatMap((pillar) =>
   pillar.skills.map((skill) => {
@@ -75,6 +77,28 @@ const SKILLS = skillPillars.flatMap((pillar) =>
     };
   }),
 );
+const SKILL_THREE_COLORS = SKILLS.map((skill) => ({
+  dark: new THREE.Color(skill.color),
+  light: new THREE.Color(getSkillColor(skill, "light")),
+}));
+const DARK_SCENE_COLOR = new THREE.Color("#0B0F17");
+const LIGHT_SCENE_COLOR = new THREE.Color("#EEF1FC");
+const DARK_PRIMARY_LIGHT = new THREE.Color(theme.accent);
+const LIGHT_PRIMARY_LIGHT = new THREE.Color("#2563A6");
+const DARK_SECONDARY_LIGHT = new THREE.Color(theme.indigo);
+const LIGHT_SECONDARY_LIGHT = new THREE.Color("#4F46A5");
+const DARK_DUST_COLOR = new THREE.Color("#A9C8FF");
+const LIGHT_DUST_COLOR = new THREE.Color("#66749A");
+const DARK_EMISSIVE_COLOR = new THREE.Color("#1B2940");
+const LIGHT_EMISSIVE_COLOR = new THREE.Color("#FFFFFF");
+const DARK_BACKGROUND_ORB = new THREE.Color("#18202E");
+const LIGHT_BACKGROUND_ORB = new THREE.Color("#E8ECF5");
+const WHITE_ORB = new THREE.Color("#FFFFFF");
+const ORBIT_COLORS = [
+  [new THREE.Color(theme.accent), new THREE.Color("#3D5F8F")],
+  [new THREE.Color(theme.indigo), new THREE.Color("#4F46A5")],
+  [new THREE.Color(theme.secure), new THREE.Color("#2F7568")],
+];
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const ORB_POSITIONS = SKILLS.map((_, index) => {
@@ -118,8 +142,18 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
   const { gl } = useThree();
   const groupRef = useRef(null);
   const meshRef = useRef(null);
-  const outlineRef = useRef(null);
+  const orbMaterial = useRef(null);
+  const ambientLight = useRef(null);
+  const firstLight = useRef(null);
+  const secondLight = useRef(null);
+  const dustMaterial = useRef(null);
+  const fog = useRef(null);
+  const orbitMaterials = useRef([]);
+  const themeBlend = useRef(themeMode === "light" ? 1 : 0);
   const reveal = useRef(0);
+  const sceneColor = useMemo(() => new THREE.Color(), []);
+  const backgroundOrbColor = useMemo(() => new THREE.Color(), []);
+  const orbColor = useMemo(() => new THREE.Color(), []);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const glowTexture = useMemo(() => makeGlowTexture(), []);
   const glows = useMemo(
@@ -150,10 +184,6 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
   );
 
   useEffect(() => {
-    gl.setClearColor(themeMode === "light" ? "#EAF1F7" : "#0B0F17", 0);
-  }, [gl, themeMode]);
-
-  useEffect(() => {
     glows.forEach((sprite) => {
       sprite.material.blending = themeMode === "light"
         ? THREE.NormalBlending
@@ -164,6 +194,47 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
 
   useFrame(({ pointer, clock }, delta) => {
     if (!meshRef.current || !groupRef.current) return;
+    themeBlend.current = THREE.MathUtils.damp(
+      themeBlend.current,
+      themeMode === "light" ? 1 : 0,
+      5,
+      delta,
+    );
+    const themeAmount = themeBlend.current;
+    const clearColor = sceneColor.copy(DARK_SCENE_COLOR).lerp(LIGHT_SCENE_COLOR, themeAmount);
+    gl.setClearColor(clearColor, 0);
+    if (fog.current) {
+      fog.current.color.copy(clearColor);
+      fog.current.near = THREE.MathUtils.lerp(10000, 5.4, themeAmount);
+      fog.current.far = THREE.MathUtils.lerp(20000, 11, themeAmount);
+    }
+    if (ambientLight.current) {
+      ambientLight.current.intensity = THREE.MathUtils.lerp(0.55, 1.3, themeAmount);
+    }
+    if (firstLight.current) {
+      firstLight.current.intensity = THREE.MathUtils.lerp(1.3, 1.8, themeAmount);
+      firstLight.current.color.copy(DARK_PRIMARY_LIGHT).lerp(LIGHT_PRIMARY_LIGHT, themeAmount);
+    }
+    if (secondLight.current) {
+      secondLight.current.intensity = THREE.MathUtils.lerp(1.2, 1, themeAmount);
+      secondLight.current.color.copy(DARK_SECONDARY_LIGHT).lerp(LIGHT_SECONDARY_LIGHT, themeAmount);
+    }
+    if (dustMaterial.current) {
+      dustMaterial.current.color.copy(DARK_DUST_COLOR).lerp(LIGHT_DUST_COLOR, themeAmount);
+      dustMaterial.current.opacity = THREE.MathUtils.lerp(0.5, 0.58, themeAmount);
+    }
+    if (orbMaterial.current) {
+      orbMaterial.current.emissive.copy(DARK_EMISSIVE_COLOR).lerp(LIGHT_EMISSIVE_COLOR, themeAmount);
+      orbMaterial.current.emissiveIntensity = THREE.MathUtils.lerp(0.4, 0.24, themeAmount);
+      orbMaterial.current.roughness = THREE.MathUtils.lerp(0.24, 0.38, themeAmount);
+      orbMaterial.current.metalness = THREE.MathUtils.lerp(0.48, 0.08, themeAmount);
+      orbMaterial.current.clearcoat = themeAmount * 0.3;
+    }
+    orbitMaterials.current.forEach((material, index) => {
+      if (!material) return;
+      material.color.copy(ORBIT_COLORS[index][0]).lerp(ORBIT_COLORS[index][1], themeAmount);
+      material.opacity = THREE.MathUtils.lerp(0.16, 0.28, themeAmount);
+    });
     reveal.current = THREE.MathUtils.damp(reveal.current, 1, 2.2, delta);
     const selectedIndex = pinned ?? hovered;
     const time = clock.elapsedTime;
@@ -174,7 +245,7 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
       const categoryMatch = category === "All" || skill.category === category;
       const depth = (position[2] + 2.65) / 5.3;
       const baseScale = 0.105 + depth * 0.045;
-      const scale = baseScale * (themeMode === "light" ? 1.3 : 1) * (selected ? 1.4 : 1);
+      const scale = baseScale * (1 + themeAmount * 0.3) * (selected ? 1.4 : 1);
       dummy.position.set(
         position[0] * reveal.current,
         position[1] * reveal.current,
@@ -184,20 +255,15 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
       dummy.rotation.set(time * 0.12, time * 0.2, 0);
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(index, dummy.matrix);
-      dummy.scale.setScalar(themeMode === "light" ? baseScale * 1.56 : 0);
-      dummy.updateMatrix();
-      outlineRef.current?.setMatrixAt(index, dummy.matrix);
-
-      const displayColor = themeMode === "light"
-        ? LIGHT_BRAND_COLORS[skill.id] || skill.color
-        : skill.color;
-      const baseColor = new THREE.Color(displayColor);
-      const color = categoryMatch
-        ? baseColor
-        : baseColor.clone().lerp(new THREE.Color(themeMode === "light" ? "#E5EAF0" : "#18202E"), 0.82);
-      if (selected) color.lerp(new THREE.Color(themeMode === "light" ? "#FFFFFF" : "#FFFFFF"), 0.25);
-      else if (themeMode === "light" && selectedIndex != null) {
-        color.lerp(new THREE.Color("#E5EAF0"), 0.68);
+      const colorPair = SKILL_THREE_COLORS[index];
+      const color = orbColor.copy(colorPair.dark).lerp(colorPair.light, themeAmount);
+      if (!categoryMatch) {
+        backgroundOrbColor.copy(DARK_BACKGROUND_ORB).lerp(LIGHT_BACKGROUND_ORB, themeAmount);
+        color.lerp(backgroundOrbColor, 0.82);
+      }
+      if (selected) color.lerp(WHITE_ORB, THREE.MathUtils.lerp(0.25, 0.18, themeAmount));
+      else if (selectedIndex != null) {
+        color.lerp(LIGHT_BACKGROUND_ORB, 0.55 * themeAmount);
       }
       meshRef.current.setColorAt(index, color);
       glows[index].position.set(
@@ -205,18 +271,14 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
         position[1] * reveal.current,
         position[2] * reveal.current,
       );
-      glows[index].material.color.set(displayColor);
-      glows[index].scale.setScalar(selected ? 1.08 : categoryMatch ? 0.58 : 0.2);
-      glows[index].material.opacity = selected
-        ? 1
-        : themeMode === "light" && selectedIndex != null
-          ? 0.12
-          : categoryMatch
-            ? (themeMode === "light" ? 0.62 : 0.45)
-            : 0.035;
+      glows[index].material.color.copy(colorPair.dark).lerp(colorPair.light, themeAmount);
+      const glowScale = selected ? 1.08 : categoryMatch ? 0.58 : 0.2;
+      glows[index].scale.setScalar(THREE.MathUtils.lerp(glowScale, selected ? 0.72 : 0.42, themeAmount));
+      const darkOpacity = selected ? 1 : categoryMatch ? 0.45 : 0.035;
+      const lightOpacity = selected ? 0.3 : selectedIndex != null ? 0.025 : categoryMatch ? 0.22 : 0.015;
+      glows[index].material.opacity = THREE.MathUtils.lerp(darkOpacity, lightOpacity, themeAmount);
     });
     meshRef.current.instanceMatrix.needsUpdate = true;
-    if (outlineRef.current) outlineRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
 
     if (!reducedMotion) {
@@ -242,17 +304,19 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
 
   return (
     <>
-      <ambientLight intensity={themeMode === "light" ? 0.9 : 0.55} />
-      <pointLight position={[3, 2, 4]} color={themeMode === "light" ? "#38BDF8" : theme.accent} intensity={1.3} distance={12} />
-      <pointLight position={[-4, -1, -3]} color={theme.indigo} intensity={1.2} distance={12} />
+      <fog ref={fog} attach="fog" args={["#0B0F17", 10000, 20000]} />
+      <ambientLight ref={ambientLight} intensity={0.55} />
+      <pointLight ref={firstLight} position={[3, 2, 4]} color={theme.accent} intensity={1.3} distance={12} />
+      <pointLight ref={secondLight} position={[-4, -1, -3]} color={theme.indigo} intensity={1.2} distance={12} />
       <Points positions={DUST_POSITIONS.slice(0, (mobile ? 100 : 180) * 3)} stride={3}>
         <PointMaterial
+          ref={dustMaterial}
           transparent
-          color={themeMode === "light" ? "#55748D" : "#A9C8FF"}
-          size={themeMode === "light" ? 0.022 : 0.018}
+          color="#A9C8FF"
+          size={0.018}
           sizeAttenuation
           depthWrite={false}
-          opacity={themeMode === "light" ? 0.72 : 0.5}
+          opacity={0.5}
         />
       </Points>
       <group ref={groupRef}>
@@ -260,22 +324,13 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
           <mesh key={index} rotation={[index * 0.82, index * 0.55, index * 0.38]}>
             <torusGeometry args={[1.05 + index * 0.18, 0.003, 4, 112]} />
             <meshBasicMaterial
-              color={themeMode === "light"
-                ? ["#35617A", "#5853A8", "#267A68"][index]
-                : [theme.accent, theme.indigo, theme.secure][index]}
+              ref={(material) => { orbitMaterials.current[index] = material; }}
+              color={[theme.accent, theme.indigo, theme.secure][index]}
               transparent
-              opacity={themeMode === "light" ? 0.34 : 0.16}
+              opacity={0.16}
             />
           </mesh>
         ))}
-        <instancedMesh
-          ref={outlineRef}
-          args={[undefined, undefined, SKILLS.length]}
-          visible={themeMode === "light"}
-        >
-          <icosahedronGeometry args={[1, 1]} />
-          <meshBasicMaterial color="#294A62" />
-        </instancedMesh>
         {glows.map((sprite, index) => (
           <primitive key={SKILLS[index].id} object={sprite} />
         ))}
@@ -283,13 +338,18 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
           ref={meshRef}
           args={[undefined, undefined, SKILLS.length]}
         >
-          <icosahedronGeometry args={[1, 1]} />
-          <meshStandardMaterial
+          {themeMode === "light"
+            ? <sphereGeometry args={[1, 16, 12]} />
+            : <icosahedronGeometry args={[1, 1]} />}
+          <meshPhysicalMaterial
+            ref={orbMaterial}
             vertexColors
             roughness={0.24}
             metalness={0.48}
-            emissive={themeMode === "light" ? "#D7E6F3" : "#1B2940"}
-            emissiveIntensity={themeMode === "light" ? 0.65 : 0.4}
+            emissive="#1B2940"
+            emissiveIntensity={0.4}
+            clearcoat={0}
+            clearcoatRoughness={0.2}
           />
         </instancedMesh>
         {SKILLS.map((skill, index) => (
@@ -314,7 +374,7 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
                 event.stopPropagation();
                 onPin(index);
               }}
-              style={{ "--skill-color": skill.color }}
+              style={{ "--skill-color": getSkillColor(skill, themeMode) }}
             />
           </Html>
         ))}
@@ -331,7 +391,7 @@ function Galaxy({ category, hovered, pinned, onHover, onPin, reducedMotion, mobi
               <span
                 className={`skill-orb-label${index === activeIndex ? " is-active" : ""}`}
                 style={{
-                  "--skill-color": skill.color,
+                  "--skill-color": getSkillColor(skill, themeMode),
                   opacity: Math.max(0.3, 0.32 + depth * 0.68) * (activeIndex != null && index !== activeIndex ? 0.42 : 1),
                 }}
               >

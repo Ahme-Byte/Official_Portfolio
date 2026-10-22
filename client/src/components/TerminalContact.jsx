@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
 import * as THREE from "three";
@@ -24,6 +24,12 @@ import { useInViewCanvas } from "../hooks/useInViewCanvas";
 import { useThemeMode } from "../hooks/useThemeMode";
 
 const FORM_ENDPOINT = contactConfig.formspreeEndpoint;
+const LIGHT_CONTACT_TONES = {
+  email: "#0369A1",
+  whatsapp: "#047857",
+  linkedin: "#1D4ED8",
+  github: "#4F46E5",
+};
 const CONTACT_METHODS = [
   {
     id: "email",
@@ -73,6 +79,31 @@ function createGlobePoints(count) {
 }
 
 const GLOBE_POINTS = createGlobePoints(620);
+const GLOBE_DARK_BACKGROUND = new THREE.Color("#0B0F17");
+const GLOBE_LIGHT_BACKGROUND = new THREE.Color("#EEF2FA");
+const GLOBE_DARK_DOTS = new THREE.Color("#8DDCFA");
+const GLOBE_LIGHT_DOTS = new THREE.Color("#315E83");
+const GLOBE_LIGHT_PRIMARY = new THREE.Color("#1D5D91");
+const GLOBE_LIGHT_SECONDARY = new THREE.Color("#4F46A5");
+const GLOBE_DARK_PIN = new THREE.Color("#F8FAFC");
+const GLOBE_DARK_ARCS = [
+  new THREE.Color(theme.accent),
+  new THREE.Color(theme.secure),
+  new THREE.Color(theme.accent),
+  new THREE.Color(theme.secure),
+  new THREE.Color(theme.indigo),
+  new THREE.Color(theme.accent),
+];
+const GLOBE_LIGHT_ARCS = [
+  new THREE.Color("#1D5D91"),
+  new THREE.Color("#047857"),
+  new THREE.Color("#1D4ED8"),
+  new THREE.Color("#047857"),
+  new THREE.Color("#4F46E5"),
+  new THREE.Color("#0369A1"),
+];
+const GLOBE_DARK_ARC_OPACITIES = [0.34, 0.28, 0.22, 0, 0.6, 0.5];
+const GLOBE_LIGHT_ARC_OPACITIES = [0.62, 0.56, 0.5, 0.58, 0.56, 0.5];
 
 function GlobeScene({ themeMode }) {
   const { gl } = useThree();
@@ -81,46 +112,100 @@ function GlobeScene({ themeMode }) {
   const pin = useRef(null);
   const pinRing = useRef(null);
   const light = useRef(null);
-
-  useEffect(() => {
-    gl.setClearColor(themeMode === "light" ? "#EAF1F7" : "#0B0F17", 0);
-  }, [gl, themeMode]);
+  const dotsMaterial = useRef(null);
+  const pinMaterial = useRef(null);
+  const coneMaterial = useRef(null);
+  const ambientLight = useRef(null);
+  const firstLight = useRef(null);
+  const secondLight = useRef(null);
+  const fog = useRef(null);
+  const arcMaterials = useRef([]);
+  const themeBlend = useRef(themeMode === "light" ? 1 : 0);
+  const backgroundColor = useMemo(() => new THREE.Color(), []);
 
   useFrame(({ clock }, delta) => {
+    themeBlend.current = THREE.MathUtils.damp(
+      themeBlend.current,
+      themeMode === "light" ? 1 : 0,
+      5,
+      delta,
+    );
+    const themeAmount = themeBlend.current;
+    backgroundColor.copy(GLOBE_DARK_BACKGROUND).lerp(GLOBE_LIGHT_BACKGROUND, themeAmount);
+    gl.setClearColor(backgroundColor, 0);
+    if (fog.current) {
+      fog.current.color.copy(backgroundColor);
+      fog.current.near = THREE.MathUtils.lerp(10000, 5.2, themeAmount);
+      fog.current.far = THREE.MathUtils.lerp(20000, 10, themeAmount);
+    }
+    if (dotsMaterial.current) {
+      dotsMaterial.current.color.copy(GLOBE_DARK_DOTS).lerp(GLOBE_LIGHT_DOTS, themeAmount);
+      dotsMaterial.current.opacity = THREE.MathUtils.lerp(0.88, 0.94, themeAmount);
+      dotsMaterial.current.size = THREE.MathUtils.lerp(0.027, 0.031, themeAmount);
+    }
+    if (ambientLight.current) {
+      ambientLight.current.intensity = THREE.MathUtils.lerp(0.42, 0.78, themeAmount);
+    }
+    if (firstLight.current) {
+      firstLight.current.intensity = THREE.MathUtils.lerp(1.4, 1.25, themeAmount);
+      firstLight.current.color.copy(GLOBE_DARK_ARCS[0]).lerp(GLOBE_LIGHT_PRIMARY, themeAmount);
+    }
+    if (secondLight.current) {
+      secondLight.current.intensity = THREE.MathUtils.lerp(1, 0.85, themeAmount);
+      secondLight.current.color.copy(GLOBE_DARK_ARCS[4]).lerp(GLOBE_LIGHT_SECONDARY, themeAmount);
+    }
+    arcMaterials.current.forEach((material, index) => {
+      if (!material) return;
+      material.color.copy(GLOBE_DARK_ARCS[index]).lerp(GLOBE_LIGHT_ARCS[index], themeAmount);
+      material.opacity = THREE.MathUtils.lerp(
+        GLOBE_DARK_ARC_OPACITIES[index],
+        GLOBE_LIGHT_ARC_OPACITIES[index],
+        themeAmount,
+      );
+    });
     if (globe.current) globe.current.rotation.y += delta * 0.055;
     if (arcs.current) {
       arcs.current.rotation.y -= delta * 0.12;
       arcs.current.rotation.z += delta * 0.035;
     }
     if (pin.current) {
-      const pulse = 1 + Math.sin(clock.elapsedTime * 3) * (themeMode === "light" ? 0.18 : 0.1);
+      const pulse = 1 + Math.sin(clock.elapsedTime * 3) * THREE.MathUtils.lerp(0.1, 0.18, themeAmount);
       pin.current.scale.setScalar(pulse);
     }
     if (pinRing.current) {
       const phase = (clock.elapsedTime * 0.55) % 1;
       pinRing.current.scale.setScalar(0.75 + phase * 1.3);
-      pinRing.current.material.opacity = (1 - phase) * (themeMode === "light" ? 0.72 : 0.42);
+      pinRing.current.material.opacity = (1 - phase) * 0.58 * themeAmount;
+    }
+    if (pinMaterial.current) {
+      pinMaterial.current.color.copy(GLOBE_DARK_PIN).lerp(GLOBE_LIGHT_ARCS[1], themeAmount);
+    }
+    if (coneMaterial.current) {
+      coneMaterial.current.color.copy(GLOBE_DARK_ARCS[1]).lerp(GLOBE_LIGHT_ARCS[1], themeAmount);
     }
     if (light.current) {
-      light.current.intensity = 1.8 + Math.sin(clock.elapsedTime * 3) * 0.7;
+      light.current.intensity = (1.8 + Math.sin(clock.elapsedTime * 3) * 0.7) * THREE.MathUtils.lerp(1, 0.72, themeAmount);
+      light.current.color.copy(GLOBE_DARK_ARCS[1]).lerp(GLOBE_LIGHT_ARCS[1], themeAmount);
     }
   });
 
   return (
     <>
-      <ambientLight intensity={themeMode === "light" ? 0.85 : 0.42} />
-      <pointLight position={[3, 2, 4]} intensity={themeMode === "light" ? 1.7 : 1.4} color={themeMode === "light" ? "#0369A1" : theme.accent} />
-      <pointLight position={[-3, -2, -3]} intensity={themeMode === "light" ? 1.25 : 1} color={themeMode === "light" ? "#4F46E5" : theme.indigo} />
+      <fog ref={fog} attach="fog" args={["#0B0F17", 10000, 20000]} />
+      <ambientLight ref={ambientLight} intensity={0.42} />
+      <pointLight ref={firstLight} position={[3, 2, 4]} intensity={1.4} color={theme.accent} />
+      <pointLight ref={secondLight} position={[-3, -2, -3]} intensity={1} color={theme.indigo} />
 
       <group ref={globe}>
         <Points positions={GLOBE_POINTS} stride={3} frustumCulled={false}>
           <PointMaterial
+            ref={dotsMaterial}
             transparent
-            color={themeMode === "light" ? "#1F5F82" : "#8DDCFA"}
-            size={themeMode === "light" ? 0.032 : 0.027}
+            color="#8DDCFA"
+            size={0.027}
             sizeAttenuation
             depthWrite={false}
-            opacity={themeMode === "light" ? 1 : 0.88}
+            opacity={0.88}
           />
         </Points>
 
@@ -137,38 +222,38 @@ function GlobeScene({ themeMode }) {
               args={[1.58 + index * 0.16, 0.009, 6, 96, Math.PI * 1.23]}
             />
             <meshBasicMaterial
-              color={themeMode === "light" ? (index === 1 ? "#047857" : "#0369A1") : (index === 1 ? theme.secure : theme.accent)}
+              ref={(material) => { arcMaterials.current[index] = material; }}
+              color={theme.accent}
               transparent
-              opacity={themeMode === "light" ? 0.68 - index * 0.08 : 0.34 - index * 0.06}
+              opacity={0.34 - index * 0.06}
             />
           </mesh>
         ))}
 
         <group position={[0.68, 0.6, 1.02]}>
-          {themeMode === "light" && (
-            <mesh ref={pinRing} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[0.12, 0.145, 32]} />
-              <meshBasicMaterial
-                color="#047857"
-                transparent
-                opacity={0.7}
-                side={THREE.DoubleSide}
-                depthWrite={false}
-              />
-            </mesh>
-          )}
+          <mesh ref={pinRing} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.12, 0.145, 32]} />
+            <meshBasicMaterial
+              ref={(material) => { arcMaterials.current[3] = material; }}
+              color="#047857"
+              transparent
+              opacity={0}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
           <mesh ref={pin} position={[0, 0.21, 0]}>
             <sphereGeometry args={[0.095, 16, 12]} />
-            <meshBasicMaterial color={themeMode === "light" ? "#047857" : "#F8FAFC"} />
+            <meshBasicMaterial ref={pinMaterial} color="#F8FAFC" />
           </mesh>
           <mesh position={[0, 0.08, 0]}>
             <coneGeometry args={[0.045, 0.23, 12]} />
-            <meshBasicMaterial color={themeMode === "light" ? "#047857" : theme.secure} />
+            <meshBasicMaterial ref={coneMaterial} color={theme.secure} />
           </mesh>
           <pointLight
             ref={light}
             position={[0, 0.24, 0.12]}
-            color={themeMode === "light" ? "#047857" : theme.secure}
+            color={theme.secure}
             distance={1.1}
             intensity={2}
           />
@@ -178,21 +263,30 @@ function GlobeScene({ themeMode }) {
       <group ref={arcs}>
         <mesh rotation={[0.2, 0.4, 0.5]}>
           <torusGeometry args={[1.92, 0.008, 5, 80, Math.PI * 1.2]} />
-          <meshBasicMaterial color={themeMode === "light" ? "#4F46E5" : theme.indigo} transparent opacity={0.6} />
+          <meshBasicMaterial
+            ref={(material) => { arcMaterials.current[4] = material; }}
+            color={theme.indigo}
+            transparent
+            opacity={0.6}
+          />
         </mesh>
         <mesh rotation={[1.1, -0.5, 1.2]}>
           <torusGeometry args={[2.06, 0.008, 5, 80, Math.PI * 1.05]} />
-          <meshBasicMaterial color={themeMode === "light" ? "#0369A1" : theme.accent} transparent opacity={0.5} />
+          <meshBasicMaterial
+            ref={(material) => { arcMaterials.current[5] = material; }}
+            color={theme.accent}
+            transparent
+            opacity={0.5}
+          />
         </mesh>
       </group>
     </>
   );
 }
 
-function GlobePanel({ status }) {
+function GlobePanel({ status, themeMode }) {
   const { ref, inView } = useInViewCanvas({ rootMargin: "120px 0px" });
   const reducedMotion = useReducedMotion();
-  const themeMode = useThemeMode();
 
   return (
     <div
@@ -272,12 +366,13 @@ function GlobePanel({ status }) {
   );
 }
 
-function MagneticContact({ item, index }) {
+function MagneticContact({ item, index, themeMode }) {
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const springX = useSpring(x, { stiffness: 180, damping: 16 });
   const springY = useSpring(y, { stiffness: 180, damping: 16 });
   const Icon = item.icon;
+  const tone = themeMode === "light" ? LIGHT_CONTACT_TONES[item.id] : item.tone;
 
   const move = (event) => {
     if (event.pointerType !== "mouse") return;
@@ -292,7 +387,7 @@ function MagneticContact({ item, index }) {
 
   const content = (
     <>
-      <span className="contact-method-icon" style={{ color: item.tone }}>
+      <span className="contact-method-icon" style={{ color: tone }}>
         <Icon size={18} aria-hidden="true" />
       </span>
       <span className="contact-method-copy">
@@ -311,7 +406,7 @@ function MagneticContact({ item, index }) {
     className: `contact-method glass${item.href ? "" : " contact-method-disabled"}`,
     onPointerMove: move,
     onPointerLeave: reset,
-    style: { x: springX, y: springY, "--contact-tone": item.tone },
+    style: { x: springX, y: springY, "--contact-tone": tone },
     initial: { opacity: 0, y: 16 },
     whileInView: { opacity: 1, y: 0 },
     viewport: { once: true, margin: "-30px" },
@@ -590,6 +685,7 @@ function TerminalForm({ values, setValues, errors, status, onSend }) {
 }
 
 export default function TerminalContact() {
+  const themeMode = useThemeMode();
   const headingRef = useRef(null);
   const inView = useInView(headingRef, { once: true, margin: "-40px" });
   const [mode, setMode] = useState("form");
@@ -727,11 +823,11 @@ export default function TerminalContact() {
           )}
           <div className="contact-method-grid">
             {CONTACT_METHODS.map((item, index) => (
-              <MagneticContact key={item.id} item={item} index={index} />
+              <MagneticContact key={item.id} item={item} index={index} themeMode={themeMode} />
             ))}
           </div>
         </div>
-        <GlobePanel status={status} />
+        <GlobePanel status={status} themeMode={themeMode} />
       </div>
     </section>
   );
