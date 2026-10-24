@@ -8,7 +8,7 @@ import { skillPillars } from "../config/data";
 import { useInViewCanvas, useIsDesktop } from "../hooks/useInViewCanvas";
 import { useThemeMode } from "../hooks/useThemeMode";
 
-const CATEGORIES = ["All", "Frontend", "Backend", "Database", "Security", "DevOps"];
+const CATEGORIES = ["All", "Frontend", "Backend", "Database", "Security", "DevOps", "Desktop Apps"];
 const BRAND_COLORS = {
   react: "#61DAFB",
   next: "#E2E8F0",
@@ -31,6 +31,8 @@ const BRAND_COLORS = {
   helmet: "#A5B4FC",
   encrypt: "#38BDF8",
   audit: "#FBBF24",
+  electron: "#2DD4BF",
+  "desktop-app-development": "#22D3EE",
 };
 const LIGHT_BRAND_COLORS = {
   react: "#0EA5E9",
@@ -54,6 +56,8 @@ const LIGHT_BRAND_COLORS = {
   helmet: "#4F46E5",
   encrypt: "#0EA5E9",
   audit: "#CA8A04",
+  electron: "#0F9D9A",
+  "desktop-app-development": "#0891B2",
 };
 const getSkillColor = (skill, themeMode) =>
   themeMode === "light" ? LIGHT_BRAND_COLORS[skill.id] || skill.color : skill.color;
@@ -63,6 +67,8 @@ const SKILLS = skillPillars.flatMap((pillar) =>
     const isDevOps = ["docker", "cicd"].includes(skill.id);
     const category = isDevOps
       ? "DevOps"
+      : pillar.id === "desktop"
+        ? "Desktop Apps"
       : pillar.id === "security"
         ? "Security"
         : pillar.id === "cloud"

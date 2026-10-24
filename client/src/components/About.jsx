@@ -48,6 +48,7 @@ const services = [
   { icon: Code2, title: "Full-Stack Development", tone: "accent" },
   { icon: ShieldCheck, title: "Cybersecurity and Pen-Testing", tone: "secure" },
   { icon: Sparkles, title: "3D / Interactive UI", tone: "indigo" },
+  { icon: TerminalSquare, title: "Desktop Apps — Cross-platform apps with Electron", tone: "accent" },
 ];
 
 function seededValue(seed) {
@@ -347,6 +348,9 @@ export default function About() {
           >
             <p>
               I’m Ahmad, a Full-Stack Software Engineer and Cybersecurity specialist from Lahore, Pakistan. I build secure, scalable web platforms with Next.js, TypeScript, React, Node.js, and MongoDB, MySQL, and PostgreSQL—combining security-by-design, OWASP Top 10 awareness, hardened authentication, and RBAC with polished, motion-rich 3D interfaces using GSAP.
+            </p>
+            <p>
+              I also build cross-platform desktop applications for Windows, macOS, and Linux with Electron.js.
             </p>
             <p>
               I’ve shipped live products including a freelancing marketplace, social network, earning platform, e-learning platform, and transit management system.

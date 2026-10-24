@@ -6,7 +6,7 @@ export const profile = {
   name: "Full-Stack Engineer",
   role: "Senior Full-Stack Developer · Security-Minded Builder",
   tagline:
-    "I build production-ready web products end-to-end — polished React frontends, hardened Node APIs, and cloud deployments tested against OWASP top risks.",
+    "I build production-ready web and desktop apps end-to-end — polished React frontends, hardened Node APIs, and cloud deployments tested against OWASP top risks.",
   location: "Lahore, Pakistan",
   availability: "Available for Upwork Contracts & Strategic Engineering",
   experienceYears: "1+",
@@ -98,6 +98,17 @@ export const skillPillars = [
       { id: "helmet", label: "Headers · CSP", score: 90 },
       { id: "encrypt", label: "Encrypted Data", score: 88 },
       { id: "audit", label: "Dependency Audit", score: 89 },
+    ],
+  },
+  {
+    id: "desktop",
+    title: "Desktop Apps",
+    color: "#14B8A6",
+    colorV: 0x14b8a6,
+    blurb: "Cross-platform desktop applications with Electron.",
+    skills: [
+      { id: "electron", label: "Electron.js", score: 88 },
+      { id: "desktop-app-development", label: "Desktop App Development", score: 86 },
     ],
   },
 ];
